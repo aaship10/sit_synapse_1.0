@@ -1,0 +1,20 @@
+# Secrets
+.env
+*.env
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Downloaded dataset artifacts (fetch from Zenodo, don't commit)
+rag_pipeline/vector_database.zip
+rag_pipeline/vector_database_extracted/
+
+# Generated vector store
+rag_pipeline/chroma_automotive_faults/
+rag_pipeline/chroma_*/
+
+# Local run logs / scratch output
+*.log
