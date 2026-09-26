@@ -4,7 +4,9 @@ Run:
     python api.py
 
 Then open http://localhost:8008/docs for interactive Swagger UI -- that's
-where you type in the query/filter instead of passing them as CLI args.
+where the symptom text is entered instead of a CLI arg. POST /query takes
+only {"query": "<symptom>"}; System_Category is no longer a caller-supplied
+filter, it's just returned as metadata on each match.
 
 On startup, this loads the persisted Chroma vector store at
 CHROMA_PERSIST_DIR if it already exists (built previously by pipeline.py or
@@ -31,22 +33,7 @@ if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 PERSIST_DIR = DEFAULT_PERSIST_DIR
-
-VALID_CATEGORIES = [
-    "ABS System",
-    "Air Conditioning System",
-    "Cooling System",
-    "Drivetrain",
-    "Electrical System",
-    "Emissions System",
-    "Engine Compartment",
-    "Engine Components",
-    "Fuel System",
-    "Liquid Systems",
-    "Steering",
-    "Transmission",
-    "Wheels & Tires",
-]
+TOP_K = 4
 
 app = FastAPI(
     title="Automotive Diagnostic RAG Copilot",
@@ -71,16 +58,7 @@ def startup() -> None:
 
 
 class QueryRequest(BaseModel):
-    query: str = Field(..., examples=["truck loses power on inclines"])
-    filter_category: Optional[str] = Field(
-        None,
-        description=f"Restrict the search to one System_Category. One of: {', '.join(VALID_CATEGORIES)}",
-        examples=["Fuel System"],
-    )
-    top_k: int = Field(4, ge=1, le=20)
-    generate_answer: bool = Field(
-        True, description="Also ask Groq to synthesize a diagnosis from the retrieved matches"
-    )
+    query: str = Field(..., description="The symptom, in plain language.", examples=["truck loses power on inclines"])
 
 
 class RetrievedChunk(BaseModel):
@@ -93,7 +71,6 @@ class RetrievedChunk(BaseModel):
 
 class QueryResponse(BaseModel):
     query: str
-    filter_category: Optional[str]
     matches: List[RetrievedChunk]
     answer: Optional[str] = None
 
@@ -103,14 +80,7 @@ def query(req: QueryRequest) -> QueryResponse:
     if _vectordb is None:
         raise HTTPException(status_code=503, detail="Vector store not initialized yet")
 
-    if req.filter_category and req.filter_category not in VALID_CATEGORIES:
-        raise HTTPException(
-            status_code=422,
-            detail=f"filter_category must be one of {VALID_CATEGORIES}",
-        )
-
-    search_filter = {"System_Category": req.filter_category} if req.filter_category else None
-    results = _vectordb.similarity_search(req.query, k=req.top_k, filter=search_filter)
+    results = _vectordb.similarity_search(req.query, k=TOP_K)
 
     matches = [
         RetrievedChunk(
@@ -124,17 +94,12 @@ def query(req: QueryRequest) -> QueryResponse:
     ]
 
     answer = None
-    if req.generate_answer and results:
+    if results:
         if not os.environ.get("GROQ_API_KEY"):
             raise HTTPException(status_code=400, detail="GROQ_API_KEY not set; cannot generate answer")
         answer = generate_diagnostic_answer(req.query, results)
 
-    return QueryResponse(query=req.query, filter_category=req.filter_category, matches=matches, answer=answer)
-
-
-@app.get("/categories", response_model=List[str])
-def categories() -> List[str]:
-    return VALID_CATEGORIES
+    return QueryResponse(query=req.query, matches=matches, answer=answer)
 
 
 @app.post("/rebuild", status_code=202)
