@@ -10,6 +10,7 @@ from sqlalchemy import Engine, create_engine
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 load_dotenv(PROJECT_ROOT / ".env")
+load_dotenv(PROJECT_ROOT.parent / ".env")  # shared repo-root .env; never overrides the one above
 
 
 @lru_cache(maxsize=1)

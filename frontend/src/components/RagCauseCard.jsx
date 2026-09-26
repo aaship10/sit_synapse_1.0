@@ -35,13 +35,12 @@ function DiagnosticStepList({ steps }) {
 }
 
 /**
- * Expandable ranked-cause card for a RAG match.
+ * Expandable card for a service-doc (RAG) match.
  * cause: { rank, faultName, systemCategory, severityLevel, matchedSymptoms, steps }
  */
 export default function RagCauseCard({ cause, defaultExpanded = false }) {
   const [expanded, setExpanded] = useState(defaultExpanded);
   const panelId = `cause-${cause.rank}-details`;
-  const isTop = cause.rank === 1;
 
   return (
     <article className="panel overflow-hidden">
@@ -52,11 +51,8 @@ export default function RagCauseCard({ cause, defaultExpanded = false }) {
         aria-controls={panelId}
         className="flex w-full items-start gap-4 px-6 py-5 text-left transition-colors hover:bg-surface-muted/60"
       >
-        <span
-          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-btn font-mono text-[15px] font-semibold ${
-            isTop ? 'bg-primary text-white' : 'bg-surface-muted text-text-secondary'
-          }`}
-        >
+        {/* Numbering only - these are symptom-similarity matches, not a ranking of causes. */}
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-btn bg-surface-muted font-mono text-[15px] font-semibold text-text-secondary">
           {cause.rank}
         </span>
 

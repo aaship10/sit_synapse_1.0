@@ -1,0 +1,4 @@
+# Everything needed to run the merged backend (backend/ + sql_pipeline/ + rag_pipeline/) and tests.
+-r sql_pipeline/requirements.txt
+-r rag_pipeline/requirements.txt
+httpx>=0.27   # FastAPI TestClient (tests/test_integration.py)

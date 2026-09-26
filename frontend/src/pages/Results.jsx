@@ -4,35 +4,87 @@ import { ArrowLeft, Plus, Sparkles } from 'lucide-react';
 import PageHeader from '../components/layout/PageHeader.jsx';
 import SeverityBanner from '../components/SeverityBanner.jsx';
 import RagCauseCard from '../components/RagCauseCard.jsx';
+import CodeLookupPanel from '../components/CodeLookupPanel.jsx';
 import FeedbackPanel from '../components/FeedbackPanel.jsx';
 import FaultCodeTag from '../components/FaultCodeTag.jsx';
 import { getDiagnosis, submitFeedback } from '../data/api.js';
 import { formatDate, formatMiles, formatTime, formatVehicle } from '../utils/format.js';
 
 const SEVERITY_REASON = {
-  critical: 'One or more matched faults are tagged Critical severity — do not operate until inspected.',
-  warning: 'Matched faults include High or Medium severity issues — schedule service soon.',
+  critical: 'A matched fault or active code is rated at the most severe level — do not operate until inspected.',
+  warning: 'Matched faults or codes indicate a High/Medium severity issue, or severity could not be rated — schedule service soon.',
   safe: 'Matched faults are Low severity — safe to operate, schedule routine service.',
 };
 
-/** Turns **bold** markers from the Groq answer into <strong>, without a full markdown parser. */
-function renderInlineMarkdown(line) {
-  const parts = line.split(/\*\*(.+?)\*\*/g);
-  return parts.map((part, i) => (i % 2 === 1 ? <strong key={i}>{part}</strong> : part));
+function DataNotes({ warnings }) {
+  if (!warnings?.length) return null;
+  return (
+    <details className="panel px-6 py-4 text-[14px]">
+      <summary className="cursor-pointer font-medium text-text-secondary">Data notes ({warnings.length})</summary>
+      <ul className="mt-3 list-inside list-disc space-y-1 text-text-secondary">
+        {warnings.map((w) => (
+          <li key={w}>{w}</li>
+        ))}
+      </ul>
+    </details>
+  );
 }
 
-function SuggestedDiagnosis({ text }) {
+/** Turns **bold** and *italic* markers from the Groq answer into tags, without a full markdown parser. */
+function renderInlineMarkdown(line) {
+  const parts = line.split(/(\*\*.+?\*\*|\*[^*\s][^*]*?\*)/g);
+  return parts.map((part, i) => {
+    if (part.startsWith('**') && part.endsWith('**') && part.length > 4) return <strong key={i}>{part.slice(2, -2)}</strong>;
+    if (part.startsWith('*') && part.endsWith('*') && part.length > 2) return <em key={i}>{part.slice(1, -1)}</em>;
+    return part;
+  });
+}
+
+// Fault code vs. symptom classification returned by the backend (section 3 of the answer).
+const RELATIONSHIP_STYLE = {
+  A: 'bg-severity-safe-bg text-severity-safe',
+  B: 'bg-severity-warning-bg text-severity-warning',
+  C: 'bg-severity-critical-bg text-severity-critical',
+  D: 'bg-surface-muted text-text-secondary',
+};
+
+function AnswerLine({ line }) {
+  const trimmed = line.trim();
+  // Section headers: a line that is entirely **bold**, e.g. "**2. Symptom Analysis**"
+  if (/^\*\*[^*]+\*\*$/.test(trimmed)) {
+    return <h4 className="pt-3 text-[15px] font-semibold first:pt-0">{trimmed.slice(2, -2)}</h4>;
+  }
+  if (/^[-•]\s+/.test(trimmed)) {
+    return (
+      <p className="flex gap-2 pl-1">
+        <span className="text-text-secondary">•</span>
+        <span>{renderInlineMarkdown(trimmed.replace(/^[-•]\s+/, ''))}</span>
+      </p>
+    );
+  }
+  return <p className={/^\d+\./.test(trimmed) ? 'pl-1' : ''}>{renderInlineMarkdown(trimmed)}</p>;
+}
+
+function CombinedDiagnosis({ text, relationship }) {
   if (!text) return null;
   const lines = text.split('\n').filter((l) => l.trim());
   return (
     <section className="panel px-6 py-5">
-      <div className="mb-3 flex items-center gap-2">
+      <div className="mb-3 flex flex-wrap items-center gap-2">
         <Sparkles size={18} className="text-primary" />
-        <h3>Suggested diagnosis</h3>
+        <h3>Combined diagnosis</h3>
+        {relationship && (
+          <span
+            className={`ml-auto rounded-full px-2.5 py-1 text-[12px] font-semibold uppercase tracking-wider ${RELATIONSHIP_STYLE[relationship.code]}`}
+            title="How the reported symptom relates to the fault code"
+          >
+            Code ↔ symptom: {relationship.code}. {relationship.label}
+          </span>
+        )}
       </div>
-      <div className="space-y-2 text-[14px] leading-6 text-text-primary">
+      <div className="space-y-1.5 text-[14px] leading-6 text-text-primary">
         {lines.map((line, i) => (
-          <p key={i}>{renderInlineMarkdown(line)}</p>
+          <AnswerLine key={i} line={line} />
         ))}
       </div>
     </section>
@@ -154,19 +206,26 @@ export default function Results() {
 
       <div className="mt-8 grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
         <section className="space-y-6">
-          <SuggestedDiagnosis text={d.answer} />
+          <CombinedDiagnosis text={d.answer} relationship={d.relationship} />
+
+          <CodeLookupPanel codeResults={d.codeResults} obdCodes={d.obdCodes} />
 
           <div>
             <div className="mb-4 flex flex-wrap items-baseline justify-between gap-2">
-              <h2>Ranked causes</h2>
-              <span className="text-[14px] text-text-secondary">Most relevant first</span>
+              <h2>Related service documentation</h2>
+              <span className="text-[14px] text-text-secondary">Matched by symptom similarity — not confirmed causes</span>
             </div>
             <div className="space-y-4">
               {d.causes.map((cause) => (
                 <RagCauseCard key={cause.rank} cause={cause} defaultExpanded={cause.rank === 1} />
               ))}
+              {d.causes.length === 0 && (
+                <p className="panel px-6 py-5 text-[14px] text-text-secondary">No related service documentation.</p>
+              )}
             </div>
           </div>
+
+          <DataNotes warnings={d.warnings} />
         </section>
 
         <aside className="space-y-6">

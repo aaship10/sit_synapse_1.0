@@ -1,15 +1,21 @@
 import { useEffect, useState } from 'react';
 import { Loader2, X, Plus } from 'lucide-react';
-import { decodeFaultCode, normalizeFaultCode, EXAMPLE_FAULT_CODES } from '../data/mockData.js';
+import { normalizeFaultCode, EXAMPLE_FAULT_CODES } from '../data/mockData.js';
+import { decodeFaultCode } from '../data/api.js';
 
 /**
  * Type-and-enter chip input for fault codes.
  * value: string[] of normalized codes; onChange(nextCodes)
  * Each chip is decoded asynchronously and the plain-English meaning is shown under it.
  */
-export default function CodeChipInput({ id = 'fault-codes', value, onChange }) {
-  const [draft, setDraft] = useState('');
+export default function CodeChipInput({ id = 'fault-codes', value, onChange, draft: draftProp, onDraftChange, externalError = '' }) {
+  // The typed-but-not-yet-added text can be owned by the parent (so a form submit can pick it
+  // up instead of silently dropping it); falls back to local state when uncontrolled.
+  const [localDraft, setLocalDraft] = useState('');
+  const draft = draftProp ?? localDraft;
+  const setDraft = onDraftChange ?? setLocalDraft;
   const [error, setError] = useState('');
+  const shownError = error || externalError;
   const [decoded, setDecoded] = useState({}); // code -> { status: 'loading' | 'found' | 'unknown', data }
 
   // Decode any codes we haven't looked up yet.
@@ -56,7 +62,7 @@ export default function CodeChipInput({ id = 'fault-codes', value, onChange }) {
       <div className="flex gap-2">
         <input
           id={id}
-          className={`input font-mono ${error ? 'border-severity-critical' : ''}`}
+          className={`input font-mono ${shownError ? 'border-severity-critical' : ''}`}
           placeholder="SPN 102 FMI 3, P0299 …"
           value={draft}
           onChange={(e) => {
@@ -64,7 +70,7 @@ export default function CodeChipInput({ id = 'fault-codes', value, onChange }) {
             if (error) setError('');
           }}
           onKeyDown={handleKeyDown}
-          aria-invalid={!!error}
+          aria-invalid={!!shownError}
           aria-describedby={`${id}-hint`}
           autoComplete="off"
         />
@@ -74,8 +80,8 @@ export default function CodeChipInput({ id = 'fault-codes', value, onChange }) {
         </button>
       </div>
 
-      <p id={`${id}-hint`} className={`mt-2 text-[13px] ${error ? 'text-severity-critical' : 'text-text-secondary'}`}>
-        {error || (
+      <p id={`${id}-hint`} className={`mt-2 text-[13px] ${shownError ? 'text-severity-critical' : 'text-text-secondary'}`}>
+        {shownError || (
           <>
             Press Enter to add.{' '}
             {value.length === 0 && (
@@ -127,7 +133,7 @@ export default function CodeChipInput({ id = 'fault-codes', value, onChange }) {
                     </>
                   )}
                   {d?.status === 'unknown' && (
-                    <span className="text-text-secondary">Not in the local lookup table — will be sent as entered.</span>
+                    <span className="text-text-secondary">Not found in the J1939 database — will be sent as entered.</span>
                   )}
                 </div>
               </li>

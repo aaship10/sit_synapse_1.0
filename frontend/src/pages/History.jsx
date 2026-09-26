@@ -7,7 +7,7 @@ import { getRagDiagnosisHistory } from '../data/api.js';
 import { SEVERITY, SEVERITY_LEVELS } from '../utils/severity.js';
 import { formatVehicle } from '../utils/format.js';
 
-const vehicleKey = (v) => (v ? `${formatVehicle(v)} · Unit ${v.unit}` : 'No vehicle');
+const vehicleKey = (v) => (v ? (v.unit ? `${formatVehicle(v)} · Unit ${v.unit}` : formatVehicle(v)) : 'No vehicle');
 
 export default function History() {
   const [rows, setRows] = useState(null);

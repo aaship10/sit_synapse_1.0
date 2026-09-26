@@ -77,9 +77,11 @@ export default function HistoryTable({ rows, loading = false, emptyMessage = 'No
                   {row.vehicle ? (
                     <>
                       <div className="text-[14px] font-medium">{formatVehicle(row.vehicle)}</div>
-                      <div className="text-text-secondary">
-                        Unit <span className="font-mono">{row.vehicle.unit}</span>
-                      </div>
+                      {row.vehicle.unit && (
+                        <div className="text-text-secondary">
+                          Unit <span className="font-mono">{row.vehicle.unit}</span>
+                        </div>
+                      )}
                     </>
                   ) : (
                     <div className="text-text-secondary">No vehicle</div>
