@@ -8,6 +8,7 @@ Severity fields are missing, inconsistent, or free-text.
 """
 import json
 import os
+from pathlib import Path
 from typing import Dict
 
 from groq import Groq
@@ -16,6 +17,28 @@ from groq_utils import TokenRateLimiter, call_with_backoff, estimate_tokens
 
 _client = None
 _rate_limiter = TokenRateLimiter()
+
+# Persisted across runs so a crash (rate limit, network blip, Ctrl-C) only
+# costs the one call that was in flight -- rerunning the build re-tags
+# nothing that's already cached here instead of redoing all ~99 calls.
+CACHE_PATH = Path(os.environ.get("GROQ_TAG_CACHE_PATH", "groq_tag_cache.json"))
+
+
+def _load_disk_cache() -> Dict[str, Dict[str, str]]:
+    if CACHE_PATH.exists():
+        try:
+            return json.loads(CACHE_PATH.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            return {}
+    return {}
+
+
+def _save_disk_cache(cache: Dict[str, Dict[str, str]]) -> None:
+    CACHE_PATH.write_text(json.dumps(cache, indent=2), encoding="utf-8")
+
+
+def _cache_key(system_category, fault_name) -> str:
+    return f"{system_category}|{fault_name}"
 
 VALID_CATEGORIES = ["Engine", "Electrical", "Brakes", "Transmission", "Fuel", "Cooling", "Other"]
 VALID_SEVERITIES = ["Low", "Medium", "High", "Critical"]
@@ -66,25 +89,34 @@ def infer_missing_metadata(text: str, model: str = "openai/gpt-oss-20b") -> Dict
 def backfill_metadata(docs, model: str = "openai/gpt-oss-20b"):
     """Mutates docs in place, only calling Groq for records missing real tags.
 
-    Cached per (System_Category, Fault_Name): a fault's Symptoms and
-    Diagnostic_Procedures sections are separate Documents but share one
-    severity, so without the cache every fault would cost two identical
-    Groq calls instead of one.
+    Cached per (System_Category, Fault_Name) both in memory and on disk
+    (CACHE_PATH): a fault's Symptoms and Diagnostic_Procedures sections are
+    separate Documents but share one severity, so without the cache every
+    fault would cost two identical Groq calls instead of one. The on-disk
+    half means a rerun after a crash resumes instead of re-tagging
+    everything -- only the fault that was mid-call needs a fresh request.
     """
-    cache: dict = {}
-    for doc in docs:
-        needs_category = doc.metadata.get("System_Category") in (None, "", "Unclassified")
-        needs_severity = doc.metadata.get("Severity") in (None, "", "Unknown")
-        if not (needs_category or needs_severity):
-            continue
+    cache = _load_disk_cache()
+    newly_tagged = False
+    try:
+        for doc in docs:
+            needs_category = doc.metadata.get("System_Category") in (None, "", "Unclassified")
+            needs_severity = doc.metadata.get("Severity") in (None, "", "Unknown")
+            if not (needs_category or needs_severity):
+                continue
 
-        key = (doc.metadata.get("System_Category"), doc.metadata.get("Fault_Name"))
-        if key not in cache:
-            cache[key] = infer_missing_metadata(doc.page_content, model=model)
-        tags = cache[key]
+            key = _cache_key(doc.metadata.get("System_Category"), doc.metadata.get("Fault_Name"))
+            if key not in cache:
+                cache[key] = infer_missing_metadata(doc.page_content, model=model)
+                newly_tagged = True
+                _save_disk_cache(cache)  # persist immediately -- survive a crash on the *next* call
+            tags = cache[key]
 
-        if needs_category:
-            doc.metadata["System_Category"] = tags["System_Category"]
-        if needs_severity:
-            doc.metadata["Severity"] = tags["Severity"]
+            if needs_category:
+                doc.metadata["System_Category"] = tags["System_Category"]
+            if needs_severity:
+                doc.metadata["Severity"] = tags["Severity"]
+    finally:
+        if newly_tagged:
+            _save_disk_cache(cache)
     return docs

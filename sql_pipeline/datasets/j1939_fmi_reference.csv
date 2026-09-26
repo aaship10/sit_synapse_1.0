@@ -1,0 +1,33 @@
+fmi,fmi_meaning,severity
+0,Data Valid But Above Normal Operational Range,Most Severe Level
+1,Data Valid But Below Normal Operational Range,Most Severe Level
+2,"Data Erratic, Intermittent Or Incorrect",N/A
+3,"Voltage Above Normal, Or Shorted To High Source",N/A
+4,"Voltage Below Normal, Or Shorted To Low Source",N/A
+5,Current Below Normal Or Open Circuit,N/A
+6,Current Above Normal Or Grounded Circuit,N/A
+7,Mechanical System Not Responding Or Out Of Adjustment,N/A
+8,Abnormal Frequency Or Pulse Width Or Period,N/A
+9,Abnormal Update Rate,N/A
+10,Abnormal Rate Of Change,N/A
+11,Root Cause Not Known,N/A
+12,Bad Intelligent Device Or Component,N/A
+13,Out Of Calibration,N/A
+14,Special Instructions,N/A
+15,Data Valid But Above Normal Operating Range,Least Severe Level
+16,Data Valid But Above Normal Operating Range,Moderately Severe Level
+17,Data Valid But Below Normal Operating Range,Least Severe Level
+18,Data Valid But Below Normal Operating Range,Moderately Severe Level
+19,Received Network Data In Error,N/A
+20,Data Drifted High,N/A
+21,Data Drifted Low,N/A
+22,Reserved For SAE Assignment,N/A
+23,Reserved For SAE Assignment,N/A
+24,Reserved For SAE Assignment,N/A
+25,Reserved For SAE Assignment,N/A
+26,Reserved For SAE Assignment,N/A
+27,Reserved For SAE Assignment,N/A
+28,Reserved For SAE Assignment,N/A
+29,Reserved For SAE Assignment,N/A
+30,Reserved For SAE Assignment,N/A
+31,Condition Exists,N/A

@@ -3,10 +3,11 @@ import { Search, X } from 'lucide-react';
 import PageHeader from '../components/layout/PageHeader.jsx';
 import HistoryTable from '../components/HistoryTable.jsx';
 import { getDiagnosisHistory } from '../data/mockData.js';
+import { getRagDiagnosisHistory } from '../data/api.js';
 import { SEVERITY, SEVERITY_LEVELS } from '../utils/severity.js';
 import { formatVehicle } from '../utils/format.js';
 
-const vehicleKey = (v) => `${formatVehicle(v)} · Unit ${v.unit}`;
+const vehicleKey = (v) => (v ? `${formatVehicle(v)} · Unit ${v.unit}` : 'No vehicle');
 
 export default function History() {
   const [rows, setRows] = useState(null);
@@ -15,7 +16,9 @@ export default function History() {
   const [query, setQuery] = useState('');
 
   useEffect(() => {
-    getDiagnosisHistory().then(setRows);
+    Promise.all([getDiagnosisHistory(), getRagDiagnosisHistory()]).then(([mock, real]) => {
+      setRows([...real, ...mock].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)));
+    });
   }, []);
 
   const vehicleOptions = useMemo(

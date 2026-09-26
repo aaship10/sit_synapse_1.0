@@ -72,6 +72,24 @@ def _stringify_diagnosis_steps(steps: List[Dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+def _structured_diagnosis_steps(steps: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """[{step, result:[...]}] -> [{"step": str, "outcomes": [str, ...]}].
+
+    Kept alongside the flattened text (see _stringify) so a frontend can
+    render the branching step/outcome structure directly instead of
+    re-parsing it back out of prose.
+    """
+    normalized = []
+    for entry in steps:
+        if isinstance(entry, dict):
+            results = entry.get("result", [])
+            outcomes = [str(r) for r in results] if isinstance(results, list) else [str(results)]
+            normalized.append({"step": str(entry.get("step", "")).strip(), "outcomes": outcomes})
+        else:
+            normalized.append({"step": str(entry), "outcomes": []})
+    return normalized
+
+
 def _stringify(value: Any) -> str:
     """Normalize a field into text, preserving structure as newlines."""
     if isinstance(value, list):
@@ -111,11 +129,12 @@ def faults_to_documents(records: List[Dict[str, Any]]) -> List[Document]:
         fault_name = _first_present(record, FIELD_MAP["fault_name"], "Unknown Fault")
         system_category = _first_present(record, FIELD_MAP["system_category"], "Unclassified")
         severity = _first_present(record, FIELD_MAP["severity"], "Unknown")
+        raw_steps = _first_present(record, FIELD_MAP["diagnostic_procedures"], [])
 
         sections = {
             "Fault_Description": _stringify(_first_present(record, FIELD_MAP["fault_description"])),
             "Symptoms": _stringify(_first_present(record, FIELD_MAP["symptoms"])),
-            "Diagnostic_Procedures": _stringify(_first_present(record, FIELD_MAP["diagnostic_procedures"])),
+            "Diagnostic_Procedures": _stringify(raw_steps),
         }
 
         base_metadata = {
@@ -127,12 +146,12 @@ def faults_to_documents(records: List[Dict[str, Any]]) -> List[Document]:
         for section_name, text in sections.items():
             if not text.strip():
                 continue
-            docs.append(
-                Document(
-                    page_content=text,
-                    metadata={**base_metadata, "Section": section_name},
-                )
-            )
+            metadata = {**base_metadata, "Section": section_name}
+            if section_name == "Diagnostic_Procedures" and isinstance(raw_steps, list) and raw_steps:
+                # Chroma metadata values must be flat scalars, so the structured
+                # step/outcome list is JSON-encoded rather than stored as-is.
+                metadata["Steps_JSON"] = json.dumps(_structured_diagnosis_steps(raw_steps))
+            docs.append(Document(page_content=text, metadata=metadata))
     return docs
 
 

@@ -18,5 +18,8 @@ rag_pipeline/vector_database_extracted/
 rag_pipeline/chroma_automotive_faults/
 rag_pipeline/chroma_*/
 
+# Resumable Groq tagging cache
+rag_pipeline/groq_tag_cache.json
+
 # Local run logs / scratch output
 *.log
