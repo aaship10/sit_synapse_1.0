@@ -2,12 +2,11 @@
  * Mock data + data-access functions for DiagnosticIQ.
  *
  * All vehicles, VINs, part numbers, and manual citations here are FICTIONAL
- * sample data for the hackathon demo.
+ * sample data for the hackathon demo. This file still backs the Dashboard and
+ * History pages' recent-diagnoses list (getDiagnosisHistory/getRecentDiagnoses).
  *
- * Pages/components should only use the exported async functions at the bottom
- * of this file (getDiagnosis, getDiagnosisHistory, runDiagnosis, ...). When the
- * Python backend is ready, replace the bodies of those functions with fetch()
- * calls — nothing else in the UI needs to change.
+ * The New Diagnosis -> Results flow now runs on the real RAG backend instead:
+ * see data/api.js for its getDiagnosis/runDiagnosis.
  */
 
 // ---------------------------------------------------------------------------
@@ -127,17 +126,21 @@ export const VEHICLE_CATALOG = {
 
 export const VEHICLE_YEARS = Array.from({ length: 13 }, (_, i) => 2026 - i);
 
+// Pulled directly from the Automotive Faults Dataset (one per System_Category)
+// so a preset tag always maps onto real records the RAG backend can retrieve.
 export const SYMPTOM_PRESETS = [
-  'Loss of power',
-  'Engine derate',
-  'Check engine lamp on',
-  'Black smoke',
-  'White smoke',
-  'Rough idle',
-  'Hard start',
-  'High coolant temp',
-  'Frequent regens',
-  'Turbo whistle',
+  'Engine overheating',
+  'ABS warning light on',
+  'Soft brake pedal',
+  'Grinding noise from wheels',
+  'Engine misfires',
+  'Clicking sound when starting',
+  'Whining noise from drivetrain',
+  'Check engine light on',
+  'No cold air from vents',
+  'Black smoke from exhaust',
+  'Clutch slipping',
+  'Noise when turning steering wheel',
 ];
 
 // ---------------------------------------------------------------------------
@@ -511,15 +514,10 @@ function toSummary(diagnosis) {
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // ---------------------------------------------------------------------------
-// Data-access API — swap these bodies for real backend calls later.
+// Data-access API — still mock-backed (Dashboard/History's recent-diagnoses
+// list). getDiagnosis/runDiagnosis for the New Diagnosis/Results flow live in
+// data/api.js now, backed by the real RAG pipeline.
 // ---------------------------------------------------------------------------
-
-/** Full diagnosis result by id, or null if not found. */
-export async function getDiagnosis(id) {
-  await wait(150);
-  const record = HISTORY_RECORDS.find((r) => r.id === id);
-  return record ? buildDiagnosis(record) : null;
-}
 
 /** All past diagnoses as table rows, newest first. */
 export async function getDiagnosisHistory() {
@@ -531,16 +529,6 @@ export async function getDiagnosisHistory() {
 export async function getRecentDiagnoses(limit = 5) {
   const rows = await getDiagnosisHistory();
   return rows.slice(0, limit);
-}
-
-/**
- * Submit a new diagnosis request.
- * payload: { vehicle, faultCodes, symptoms, mileage }
- * Returns { id } of the created diagnosis. Currently always the fixed mock result.
- */
-export async function runDiagnosis(payload) {
-  await wait(100);
-  return { id: 'mock-1', payload };
 }
 
 /** Record technician feedback: 'positive' | 'negative', optional note. */

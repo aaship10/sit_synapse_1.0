@@ -12,6 +12,7 @@ On startup, this loads the persisted Chroma vector store at
 CHROMA_PERSIST_DIR if it already exists (built previously by pipeline.py or
 a prior run of this API), otherwise it builds it once from the source JSON.
 """
+import json
 import os
 import sys
 from pathlib import Path
@@ -20,6 +21,7 @@ from typing import List, Optional
 import uvicorn
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from langchain_chroma import Chroma
 from pydantic import BaseModel, Field
 
@@ -39,6 +41,16 @@ app = FastAPI(
     title="Automotive Diagnostic RAG Copilot",
     description="Semantic search + Groq-generated diagnosis over the Automotive Faults Dataset.",
     version="1.0.0",
+)
+
+# The Vite dev server runs on a different origin (localhost:5173) than this API
+# (localhost:8008); without CORS enabled, the browser blocks the frontend's
+# fetch() calls entirely. Local-only demo, so allow any origin.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 _vectordb: Optional[Chroma] = None
@@ -61,12 +73,18 @@ class QueryRequest(BaseModel):
     query: str = Field(..., description="The symptom, in plain language.", examples=["truck loses power on inclines"])
 
 
+class DiagnosticStep(BaseModel):
+    step: str
+    outcomes: List[str]
+
+
 class RetrievedChunk(BaseModel):
     fault_name: str
     system_category: str
     severity: str
     section: str
     content: str
+    steps: Optional[List[DiagnosticStep]] = None
 
 
 class QueryResponse(BaseModel):
@@ -82,16 +100,25 @@ def query(req: QueryRequest) -> QueryResponse:
 
     results = _vectordb.similarity_search(req.query, k=TOP_K)
 
-    matches = [
-        RetrievedChunk(
-            fault_name=r.metadata.get("Fault_Name", ""),
-            system_category=r.metadata.get("System_Category", ""),
-            severity=r.metadata.get("Severity", ""),
-            section=r.metadata.get("Section", ""),
-            content=r.page_content,
+    matches = []
+    for r in results:
+        steps = None
+        steps_json = r.metadata.get("Steps_JSON")
+        if steps_json:
+            try:
+                steps = [DiagnosticStep(**s) for s in json.loads(steps_json)]
+            except (json.JSONDecodeError, TypeError):
+                steps = None
+        matches.append(
+            RetrievedChunk(
+                fault_name=r.metadata.get("Fault_Name", ""),
+                system_category=r.metadata.get("System_Category", ""),
+                severity=r.metadata.get("Severity", ""),
+                section=r.metadata.get("Section", ""),
+                content=r.page_content,
+                steps=steps,
+            )
         )
-        for r in results
-    ]
 
     answer = None
     if results:

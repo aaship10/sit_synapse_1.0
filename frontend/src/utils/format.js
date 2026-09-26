@@ -16,7 +16,3 @@ export function formatVehicle(v) {
 export function formatMiles(n) {
   return `${Number(n).toLocaleString('en-US')} mi`;
 }
-
-export function formatHours({ low, high }) {
-  return `${low.toFixed(1)}–${high.toFixed(1)} hr`;
-}

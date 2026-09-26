@@ -7,11 +7,13 @@ project routes through here instead of calling the SDK directly.
 """
 import time
 
-from groq import RateLimitError
+from groq import APIConnectionError, APITimeoutError, InternalServerError, RateLimitError
 
 DEFAULT_MAX_RETRIES = 5
 DEFAULT_BACKOFF_SECONDS = 60
+TRANSIENT_BACKOFF_SECONDS = 5  # for 5xx/connection errors, unrelated to rate limits
 TOKENS_PER_MINUTE_BUDGET = 7500  # this account's Groq tier cap
+TRANSIENT_ERRORS = (InternalServerError, APIConnectionError, APITimeoutError)
 
 
 class TokenRateLimiter:
@@ -48,7 +50,8 @@ def estimate_tokens(*texts: str, response_tokens: int = 100) -> int:
 
 
 def call_with_backoff(fn, *args, max_retries: int = DEFAULT_MAX_RETRIES, **kwargs):
-    """Call fn(*args, **kwargs); on RateLimitError, wait and retry."""
+    """Call fn(*args, **kwargs); retry with backoff on rate limits or transient
+    server/connection errors (e.g. a Groq 503 during an outage)."""
     for attempt in range(1, max_retries + 1):
         try:
             return fn(*args, **kwargs)
@@ -56,8 +59,14 @@ def call_with_backoff(fn, *args, max_retries: int = DEFAULT_MAX_RETRIES, **kwarg
             if attempt == max_retries:
                 raise
             wait_seconds = _retry_after_seconds(e) or DEFAULT_BACKOFF_SECONDS
+            print(f"Groq rate limit hit (attempt {attempt}/{max_retries}); waiting {wait_seconds}s before retrying...")
+            time.sleep(wait_seconds)
+        except TRANSIENT_ERRORS as e:
+            if attempt == max_retries:
+                raise
+            wait_seconds = TRANSIENT_BACKOFF_SECONDS * attempt
             print(
-                f"Groq rate limit hit (attempt {attempt}/{max_retries}); "
+                f"Groq transient error ({type(e).__name__}, attempt {attempt}/{max_retries}); "
                 f"waiting {wait_seconds}s before retrying..."
             )
             time.sleep(wait_seconds)

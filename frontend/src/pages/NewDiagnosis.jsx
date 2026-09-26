@@ -6,7 +6,7 @@ import VehicleInfoInput from '../components/VehicleInfoInput.jsx';
 import CodeChipInput from '../components/CodeChipInput.jsx';
 import SymptomInput from '../components/SymptomInput.jsx';
 import MultiStepLoader, { DIAGNOSIS_STEPS } from '../components/MultiStepLoader.jsx';
-import { runDiagnosis } from '../data/mockData.js';
+import { runDiagnosis } from '../data/api.js';
 
 const STEP_MS = 625; // 4 steps ≈ 2.5s total
 
@@ -49,16 +49,18 @@ export default function NewDiagnosis() {
   const [symptoms, setSymptoms] = useState('');
   const [mileage, setMileage] = useState('');
   const [loaderStep, setLoaderStep] = useState(null); // null = hidden
+  const [error, setError] = useState('');
   const timers = useRef([]);
 
   useEffect(() => () => timers.current.forEach(clearTimeout), []);
 
-  const canSubmit = !!vehicle && faultCodes.length > 0 && loaderStep === null;
+  const canSubmit = faultCodes.length > 0 && !!symptoms.trim() && loaderStep === null;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!canSubmit) return;
 
+    setError('');
     setLoaderStep(0);
     const request = runDiagnosis({
       vehicle,
@@ -71,22 +73,28 @@ export default function NewDiagnosis() {
       timers.current.push(setTimeout(() => setLoaderStep(i + 1), STEP_MS * (i + 1)));
     });
 
-    const [{ id }] = await Promise.all([
-      request,
-      new Promise((r) => timers.current.push(setTimeout(r, STEP_MS * DIAGNOSIS_STEPS.length + 300))),
-    ]);
-    navigate(`/diagnosis/${id}`);
+    try {
+      const [{ id }] = await Promise.all([
+        request,
+        new Promise((r) => timers.current.push(setTimeout(r, STEP_MS * DIAGNOSIS_STEPS.length + 300))),
+      ]);
+      navigate(`/diagnosis/${id}`);
+    } catch (err) {
+      timers.current.forEach(clearTimeout);
+      setLoaderStep(null);
+      setError(err.message || 'Could not reach the diagnosis backend. Is api.py running on port 8008?');
+    }
   };
 
   const vehicleLabel = vehicle ? `${vehicle.year} ${vehicle.make} ${vehicle.model}`.trim() : '';
 
   return (
     <form onSubmit={handleSubmit}>
-      <PageHeader title="New diagnosis" description="Enter the vehicle and active fault codes. Symptoms help narrow down the cause." />
+      <PageHeader title="New diagnosis" description="Enter the active fault codes and observed symptoms. Vehicle details are optional." />
 
       <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
         <div className="space-y-6">
-          <FormSection number="1" title="Vehicle information" description="Select the vehicle manually or decode it from the VIN.">
+          <FormSection number="1" title="Vehicle information" optional description="Select the vehicle manually or decode it from the VIN.">
             <VehicleInfoInput onChange={setVehicle} />
           </FormSection>
 
@@ -97,7 +105,10 @@ export default function NewDiagnosis() {
             <CodeChipInput value={faultCodes} onChange={setFaultCodes} />
           </FormSection>
 
-          <FormSection number="3" title="Symptoms" optional description="What the driver reported or what you observed.">
+          <FormSection number="3" title="Symptoms" description="What the driver reported or what you observed.">
+            <label htmlFor="symptoms" className="field-label">
+              Symptoms <span className="text-severity-critical">*</span>
+            </label>
             <SymptomInput value={symptoms} onChange={setSymptoms} />
           </FormSection>
 
@@ -127,13 +138,13 @@ export default function NewDiagnosis() {
           </div>
           <div className="px-6 py-5">
             <ul className="space-y-4">
-              <ChecklistItem done={!!vehicle} label="Vehicle" detail={vehicleLabel} />
+              <ChecklistItem done={!!vehicle} label="Vehicle" detail={vehicleLabel} optional />
               <ChecklistItem
                 done={faultCodes.length > 0}
                 label="Fault codes"
                 detail={faultCodes.length ? `${faultCodes.length} code${faultCodes.length > 1 ? 's' : ''} added` : ''}
               />
-              <ChecklistItem done={!!symptoms.trim()} label="Symptoms" detail={symptoms.trim() && 'Described'} optional />
+              <ChecklistItem done={!!symptoms.trim()} label="Symptoms" detail={symptoms.trim() && 'Described'} />
               <ChecklistItem done={!!mileage} label="Odometer" detail={mileage && `${Number(mileage).toLocaleString()} mi`} optional />
             </ul>
 
@@ -141,9 +152,10 @@ export default function NewDiagnosis() {
               <Play size={16} />
               Run Diagnosis
             </button>
-            {!canSubmit && loaderStep === null && (
-              <p className="mt-3 text-center text-[13px] text-text-secondary">Add a vehicle and at least one fault code to continue.</p>
+            {!canSubmit && loaderStep === null && !error && (
+              <p className="mt-3 text-center text-[13px] text-text-secondary">Add at least one fault code and a symptom description to continue.</p>
             )}
+            {error && <p className="mt-3 text-center text-[13px] text-severity-critical">{error}</p>}
           </div>
         </aside>
       </div>
