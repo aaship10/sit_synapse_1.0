@@ -7,6 +7,8 @@ __pycache__/
 *.pyc
 .venv/
 venv/
+rag_pipeline/venv/
+rag_pipeline/sit/
 
 # Downloaded dataset artifacts (fetch from Zenodo, don't commit)
 rag_pipeline/vector_database.zip
