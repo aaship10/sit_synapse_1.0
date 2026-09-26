@@ -27,6 +27,7 @@ from langchain_chroma import Chroma
 from pydantic import BaseModel, Field
 
 from build_store import COLLECTION_NAME, DEFAULT_DATASET_PATH, DEFAULT_PERSIST_DIR, build_vector_store
+from diagnosis_history import find_cached_diagnosis, store_diagnosis
 from embed_store import get_embedder
 from rag_answer import generate_diagnostic_answer
 
@@ -92,12 +93,24 @@ class QueryResponse(BaseModel):
     query: str
     matches: List[RetrievedChunk]
     answer: Optional[str] = None
+    from_cache: bool = False
 
 
 @app.post("/query", response_model=QueryResponse)
 def query(req: QueryRequest) -> QueryResponse:
     if _vectordb is None:
         raise HTTPException(status_code=503, detail="Vector store not initialized yet")
+
+    # Scan diagnosis history first -- a semantically close past symptom skips
+    # both the fault-DB search and the Groq call entirely.
+    cached = find_cached_diagnosis(PERSIST_DIR, req.query)
+    if cached is not None:
+        return QueryResponse(
+            query=req.query,
+            matches=[RetrievedChunk(**m) for m in cached["matches"]],
+            answer=cached["answer"] or None,
+            from_cache=True,
+        )
 
     results = _vectordb.similarity_search(req.query, k=TOP_K)
 
@@ -127,7 +140,10 @@ def query(req: QueryRequest) -> QueryResponse:
             raise HTTPException(status_code=400, detail="GROQ_API_KEY not set; cannot generate answer")
         answer = generate_diagnostic_answer(req.query, results)
 
-    return QueryResponse(query=req.query, matches=matches, answer=answer)
+    if matches:
+        store_diagnosis(PERSIST_DIR, req.query, [m.model_dump() for m in matches], answer)
+
+    return QueryResponse(query=req.query, matches=matches, answer=answer, from_cache=False)
 
 
 @app.post("/rebuild", status_code=202)

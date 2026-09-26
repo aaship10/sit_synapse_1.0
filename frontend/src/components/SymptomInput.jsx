@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Mic, Check } from 'lucide-react';
-import { SYMPTOM_PRESETS } from '../data/mockData.js';
+import { SYMPTOM_PRESETS } from '../data/symptomPresets.js';
 import { startDictation } from '../data/speech.js';
 
 function appendText(current, addition) {

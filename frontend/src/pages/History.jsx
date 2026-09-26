@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react';
 import { Search, X } from 'lucide-react';
 import PageHeader from '../components/layout/PageHeader.jsx';
 import HistoryTable from '../components/HistoryTable.jsx';
-import { getDiagnosisHistory } from '../data/mockData.js';
 import { getRagDiagnosisHistory } from '../data/api.js';
 import { SEVERITY, SEVERITY_LEVELS } from '../utils/severity.js';
 import { formatVehicle } from '../utils/format.js';
@@ -16,9 +15,7 @@ export default function History() {
   const [query, setQuery] = useState('');
 
   useEffect(() => {
-    Promise.all([getDiagnosisHistory(), getRagDiagnosisHistory()]).then(([mock, real]) => {
-      setRows([...real, ...mock].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)));
-    });
+    getRagDiagnosisHistory().then(setRows);
   }, []);
 
   const vehicleOptions = useMemo(

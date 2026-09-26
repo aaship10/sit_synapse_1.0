@@ -1,27 +1,14 @@
-import { useEffect, useState } from 'react';
-import { Loader2, X, Plus } from 'lucide-react';
-import { decodeFaultCode, normalizeFaultCode, EXAMPLE_FAULT_CODES } from '../data/mockData.js';
+import { useState } from 'react';
+import { X, Plus } from 'lucide-react';
+import { normalizeFaultCode, EXAMPLE_FAULT_CODES } from '../utils/faultCodes.js';
 
 /**
  * Type-and-enter chip input for fault codes.
  * value: string[] of normalized codes; onChange(nextCodes)
- * Each chip is decoded asynchronously and the plain-English meaning is shown under it.
  */
 export default function CodeChipInput({ id = 'fault-codes', value, onChange }) {
   const [draft, setDraft] = useState('');
   const [error, setError] = useState('');
-  const [decoded, setDecoded] = useState({}); // code -> { status: 'loading' | 'found' | 'unknown', data }
-
-  // Decode any codes we haven't looked up yet.
-  useEffect(() => {
-    value.forEach((code) => {
-      if (decoded[code]) return;
-      setDecoded((d) => ({ ...d, [code]: { status: 'loading' } }));
-      decodeFaultCode(code).then((data) =>
-        setDecoded((d) => ({ ...d, [code]: { status: data ? 'found' : 'unknown', data } }))
-      );
-    });
-  }, [value, decoded]);
 
   const addCode = (raw) => {
     const input = raw.trim();
@@ -96,43 +83,23 @@ export default function CodeChipInput({ id = 'fault-codes', value, onChange }) {
       </p>
 
       {value.length > 0 && (
-        <ul className="mt-4 grid gap-3 sm:grid-cols-2">
-          {value.map((code) => {
-            const d = decoded[code];
-            return (
-              <li key={code} className="rounded-card border border-border px-4 py-3">
-                <div className="flex items-center justify-between gap-3">
-                  <span className="inline-flex items-center gap-2 rounded-btn bg-primary-light px-2 py-1 font-mono text-[14px] font-medium text-primary">
-                    {code}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => removeCode(code)}
-                    className="rounded-btn p-1 text-text-secondary hover:bg-surface-muted hover:text-text-primary"
-                    aria-label={`Remove ${code}`}
-                  >
-                    <X size={16} />
-                  </button>
-                </div>
-                <div className="mt-2 text-[14px] leading-5">
-                  {(!d || d.status === 'loading') && (
-                    <span className="inline-flex items-center gap-2 text-text-secondary">
-                      <Loader2 size={14} className="animate-spin" /> Decoding…
-                    </span>
-                  )}
-                  {d?.status === 'found' && (
-                    <>
-                      <div className="font-medium text-text-primary">{d.data.component}</div>
-                      <div className="mt-0.5 text-text-secondary">{d.data.description}</div>
-                    </>
-                  )}
-                  {d?.status === 'unknown' && (
-                    <span className="text-text-secondary">Not in the local lookup table — will be sent as entered.</span>
-                  )}
-                </div>
-              </li>
-            );
-          })}
+        <ul className="mt-4 flex flex-wrap gap-2">
+          {value.map((code) => (
+            <li
+              key={code}
+              className="inline-flex items-center gap-2 rounded-btn bg-primary-light px-2.5 py-1.5 font-mono text-[14px] font-medium text-primary"
+            >
+              {code}
+              <button
+                type="button"
+                onClick={() => removeCode(code)}
+                className="rounded-btn text-primary/70 hover:text-primary"
+                aria-label={`Remove ${code}`}
+              >
+                <X size={14} />
+              </button>
+            </li>
+          ))}
         </ul>
       )}
     </div>

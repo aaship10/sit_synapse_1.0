@@ -1,10 +1,10 @@
 /**
- * Real backend integration for the RAG diagnostic copilot (rag_pipeline/api.py).
+ * Backend integration for the RAG diagnostic copilot (rag_pipeline/api.py).
+ * This is the only source of diagnosis data in the app -- no mock/demo data.
  *
- * Same call shape as the mock runDiagnosis/getDiagnosis/submitFeedback in
- * mockData.js -- only the `symptoms` text is actually sent to the backend
- * (it's the only input the RAG pipeline takes); vehicle/faultCodes/mileage
- * ride along locally purely for display.
+ * Only the `symptoms` text is actually sent to the backend (it's the only
+ * input the RAG pipeline takes); vehicle/faultCodes/mileage ride along
+ * locally purely for display.
  *
  * Diagnoses are persisted to localStorage (both the full record and a
  * lightweight history-index entry) so Dashboard/History can list them and

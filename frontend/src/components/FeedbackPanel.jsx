@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { ThumbsUp, ThumbsDown } from 'lucide-react';
-import { submitFeedback as submitMockFeedback } from '../data/mockData.js';
 
 function ChoiceButton({ active, activeClass, icon: Icon, label, onClick }) {
   return (
@@ -17,10 +16,10 @@ function ChoiceButton({ active, activeClass, icon: Icon, label, onClick }) {
 
 /**
  * Thumbs up/down feedback for a diagnosis, with an optional note on thumbs down.
- * onSubmit defaults to the mock history's feedback store; Results.jsx passes
- * the RAG-backed one (data/api.js) for real diagnoses instead.
+ * onSubmit: (diagnosisId, value, note?) -> Promise -- the real store to write to
+ * (Results.jsx passes data/api.js's submitFeedback, backed by the RAG history).
  */
-export default function FeedbackPanel({ diagnosisId, initialValue = null, onSubmit = submitMockFeedback }) {
+export default function FeedbackPanel({ diagnosisId, initialValue = null, onSubmit }) {
   const [value, setValue] = useState(initialValue);
   const [note, setNote] = useState('');
   const [noteSent, setNoteSent] = useState(false);
