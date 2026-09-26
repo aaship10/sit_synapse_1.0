@@ -6,7 +6,7 @@ import SeverityBanner from '../components/SeverityBanner.jsx';
 import RagCauseCard from '../components/RagCauseCard.jsx';
 import FeedbackPanel from '../components/FeedbackPanel.jsx';
 import FaultCodeTag from '../components/FaultCodeTag.jsx';
-import { getDiagnosis } from '../data/api.js';
+import { getDiagnosis, submitFeedback } from '../data/api.js';
 import { formatDate, formatMiles, formatTime, formatVehicle } from '../utils/format.js';
 
 const SEVERITY_REASON = {
@@ -170,7 +170,7 @@ export default function Results() {
         </section>
 
         <aside className="space-y-6">
-          <FeedbackPanel key={d.id} diagnosisId={d.id} initialValue={d.feedback} />
+          <FeedbackPanel key={d.id} diagnosisId={d.id} initialValue={d.feedback} onSubmit={submitFeedback} />
           <VehicleDetails d={d} />
         </aside>
       </div>

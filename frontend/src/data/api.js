@@ -1,34 +1,80 @@
 /**
  * Real backend integration for the RAG diagnostic copilot (rag_pipeline/api.py).
  *
- * Same call shape as the mock runDiagnosis/getDiagnosis in mockData.js -- only
- * the `symptoms` text is actually sent to the backend (it's the only input the
- * RAG pipeline takes); vehicle/faultCodes/mileage are kept locally purely for
- * display on the results page.
+ * Same call shape as the mock runDiagnosis/getDiagnosis/submitFeedback in
+ * mockData.js -- only the `symptoms` text is actually sent to the backend
+ * (it's the only input the RAG pipeline takes); vehicle/faultCodes/mileage
+ * ride along locally purely for display.
+ *
+ * Diagnoses are persisted to localStorage (both the full record and a
+ * lightweight history-index entry) so Dashboard/History can list them and
+ * Results can reopen them later, including after the browser is closed.
  */
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8008';
 
+const DIAGNOSIS_KEY_PREFIX = 'ragDiagnosis:';
+const HISTORY_INDEX_KEY = 'ragDiagnosisHistory';
+
 const diagnosisStore = new Map();
 
-function sessionKey(id) {
-  return `diagnosis:${id}`;
-}
-
-function saveToSession(id, diagnosis) {
+function safeGetItem(key) {
   try {
-    sessionStorage.setItem(sessionKey(id), JSON.stringify(diagnosis));
-  } catch {
-    /* sessionStorage unavailable/full -- in-memory Map still covers this tab */
-  }
-}
-
-function loadFromSession(id) {
-  try {
-    const raw = sessionStorage.getItem(sessionKey(id));
-    return raw ? JSON.parse(raw) : null;
+    return localStorage.getItem(key);
   } catch {
     return null;
   }
+}
+
+function safeSetItem(key, value) {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    /* localStorage unavailable/full -- in-memory Map still covers this tab */
+  }
+}
+
+function saveDiagnosis(id, diagnosis) {
+  diagnosisStore.set(id, diagnosis);
+  safeSetItem(DIAGNOSIS_KEY_PREFIX + id, JSON.stringify(diagnosis));
+}
+
+function loadDiagnosis(id) {
+  if (diagnosisStore.has(id)) return diagnosisStore.get(id);
+  const raw = safeGetItem(DIAGNOSIS_KEY_PREFIX + id);
+  if (!raw) return null;
+  try {
+    const diagnosis = JSON.parse(raw);
+    diagnosisStore.set(id, diagnosis);
+    return diagnosis;
+  } catch {
+    return null;
+  }
+}
+
+function loadHistoryIndex() {
+  const raw = safeGetItem(HISTORY_INDEX_KEY);
+  if (!raw) return [];
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return [];
+  }
+}
+
+function saveHistoryIndex(rows) {
+  safeSetItem(HISTORY_INDEX_KEY, JSON.stringify(rows));
+}
+
+function toSummaryRow(diagnosis) {
+  return {
+    id: diagnosis.id,
+    createdAt: diagnosis.createdAt,
+    vehicle: diagnosis.vehicle,
+    faultCodes: diagnosis.faultCodes,
+    topCause: diagnosis.causes[0]?.faultName ?? 'No match found',
+    severity: diagnosis.severity,
+    feedback: diagnosis.feedback,
+  };
 }
 
 /** Backend Severity ("Low"|"Medium"|"High"|"Critical") -> UI level ("safe"|"warning"|"critical"). */
@@ -121,12 +167,28 @@ export async function runDiagnosis(payload) {
     feedback: null,
   };
 
-  diagnosisStore.set(id, diagnosis);
-  saveToSession(id, diagnosis);
+  saveDiagnosis(id, diagnosis);
+  saveHistoryIndex([toSummaryRow(diagnosis), ...loadHistoryIndex()]);
   return { id };
 }
 
-/** Full diagnosis result by id, or null if not found (e.g. after a page reload in a new tab). */
+/** Full diagnosis result by id, or null if not found. */
 export async function getDiagnosis(id) {
-  return diagnosisStore.get(id) ?? loadFromSession(id) ?? null;
+  return loadDiagnosis(id);
+}
+
+/** All RAG diagnoses as history-table rows, newest first. */
+export async function getRagDiagnosisHistory() {
+  return loadHistoryIndex();
+}
+
+/** Record technician feedback for a RAG diagnosis: 'positive' | 'negative'. */
+export async function submitFeedback(id, value, note = '') {
+  const diagnosis = loadDiagnosis(id);
+  if (diagnosis) {
+    diagnosis.feedback = value;
+    saveDiagnosis(id, diagnosis);
+    saveHistoryIndex(loadHistoryIndex().map((row) => (row.id === id ? { ...row, feedback: value } : row)));
+  }
+  return { ok: true, id, value, note };
 }

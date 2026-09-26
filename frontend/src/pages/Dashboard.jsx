@@ -4,6 +4,7 @@ import { Plus, ArrowRight } from 'lucide-react';
 import PageHeader from '../components/layout/PageHeader.jsx';
 import HistoryTable from '../components/HistoryTable.jsx';
 import { getDiagnosisHistory } from '../data/mockData.js';
+import { getRagDiagnosisHistory } from '../data/api.js';
 
 function StatTile({ label, value, hint }) {
   return (
@@ -20,7 +21,9 @@ export default function Dashboard() {
   const [rows, setRows] = useState(null);
 
   useEffect(() => {
-    getDiagnosisHistory().then(setRows);
+    Promise.all([getDiagnosisHistory(), getRagDiagnosisHistory()]).then(([mock, real]) => {
+      setRows([...real, ...mock].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)));
+    });
   }, []);
 
   const recent = rows?.slice(0, 5) ?? [];

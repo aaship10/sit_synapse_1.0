@@ -74,10 +74,16 @@ export default function HistoryTable({ rows, loading = false, emptyMessage = 'No
                   <div className="font-mono text-text-secondary">{formatTime(row.createdAt)}</div>
                 </td>
                 <td className="px-4 py-3.5 align-top">
-                  <div className="text-[14px] font-medium">{formatVehicle(row.vehicle)}</div>
-                  <div className="text-text-secondary">
-                    Unit <span className="font-mono">{row.vehicle.unit}</span>
-                  </div>
+                  {row.vehicle ? (
+                    <>
+                      <div className="text-[14px] font-medium">{formatVehicle(row.vehicle)}</div>
+                      <div className="text-text-secondary">
+                        Unit <span className="font-mono">{row.vehicle.unit}</span>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="text-text-secondary">No vehicle</div>
+                  )}
                 </td>
                 <td className="px-4 py-3.5 align-top">
                   <div className="flex flex-col items-start gap-1">
