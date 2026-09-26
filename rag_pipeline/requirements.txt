@@ -9,3 +9,9 @@ pandas
 python-dotenv
 fastapi
 uvicorn
+
+# Auth service (rag_pipeline/auth/)
+psycopg2-binary
+bcrypt
+PyJWT
+pydantic[email]
