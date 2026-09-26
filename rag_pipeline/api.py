@@ -18,6 +18,7 @@ import sys
 from pathlib import Path
 from typing import List, Optional
 
+import httpx
 import uvicorn
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
@@ -135,6 +136,35 @@ def rebuild() -> dict:
     global _vectordb
     _vectordb = build_vector_store(json_path=DEFAULT_DATASET_PATH, persist_directory=PERSIST_DIR)
     return {"status": "rebuilt", "persist_dir": PERSIST_DIR}
+
+
+class SpeechTokenResponse(BaseModel):
+    token: str
+    expires_in_seconds: int
+
+
+@app.get("/speech/token", response_model=SpeechTokenResponse)
+def speech_token(expires_in_seconds: int = 60) -> SpeechTokenResponse:
+    """Mints a short-lived AssemblyAI streaming token for the browser mic.
+
+    The real ASSEMBLYAI_API_KEY never leaves this server -- the frontend
+    only ever sees this one-time, time-limited token, which is the auth
+    pattern AssemblyAI's docs recommend for browser-based clients.
+    """
+    api_key = os.environ.get("ASSEMBLYAI_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=400, detail="ASSEMBLYAI_API_KEY not set on the server")
+
+    resp = httpx.get(
+        "https://streaming.assemblyai.com/v3/token",
+        params={"expires_in_seconds": expires_in_seconds},
+        headers={"Authorization": api_key},
+        timeout=10,
+    )
+    if resp.status_code != 200:
+        raise HTTPException(status_code=502, detail=f"AssemblyAI token request failed: {resp.text}")
+
+    return SpeechTokenResponse(token=resp.json()["token"], expires_in_seconds=expires_in_seconds)
 
 
 if __name__ == "__main__":
