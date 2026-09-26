@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, Plus, Sparkles } from 'lucide-react';
 import PageHeader from '../components/layout/PageHeader.jsx';
 import SeverityBanner from '../components/SeverityBanner.jsx';
-import RagCauseCard from '../components/RagCauseCard.jsx';
+import GuidedDiagnosis from '../components/GuidedDiagnosis.jsx';
 import FeedbackPanel from '../components/FeedbackPanel.jsx';
 import FaultCodeTag from '../components/FaultCodeTag.jsx';
 import { getDiagnosis, submitFeedback } from '../data/api.js';
@@ -155,18 +155,7 @@ export default function Results() {
       <div className="mt-8 grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
         <section className="space-y-6">
           <SuggestedDiagnosis text={d.answer} />
-
-          <div>
-            <div className="mb-4 flex flex-wrap items-baseline justify-between gap-2">
-              <h2>Ranked causes</h2>
-              <span className="text-[14px] text-text-secondary">Most relevant first</span>
-            </div>
-            <div className="space-y-4">
-              {d.causes.map((cause) => (
-                <RagCauseCard key={cause.rank} cause={cause} defaultExpanded={cause.rank === 1} />
-              ))}
-            </div>
-          </div>
+          <GuidedDiagnosis key={d.id} causes={d.causes} />
         </section>
 
         <aside className="space-y-6">
