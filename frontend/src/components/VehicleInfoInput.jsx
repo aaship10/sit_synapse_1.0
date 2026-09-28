@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import { Loader2, AlertTriangle, CheckCircle2 } from 'lucide-react';
-import { VEHICLE_CATALOG, VEHICLE_YEARS } from '../data/mockData.js';
 import { decodeVin, VIN_PATTERN } from '../data/nhtsa.js';
 
 const MODES = [
@@ -8,20 +7,15 @@ const MODES = [
   { key: 'vin', label: 'VIN lookup' },
 ];
 
-function Select({ id, label, value, onChange, options, placeholder, disabled }) {
+const CURRENT_YEAR = new Date().getFullYear();
+
+function TextField({ id, label, value, onChange, placeholder }) {
   return (
     <div>
       <label htmlFor={id} className="field-label">
         {label}
       </label>
-      <select id={id} className="input" value={value} onChange={(e) => onChange(e.target.value)} disabled={disabled}>
-        <option value="">{placeholder}</option>
-        {options.map((o) => (
-          <option key={o} value={o}>
-            {o}
-          </option>
-        ))}
-      </select>
+      <input id={id} className="input" placeholder={placeholder} value={value} onChange={(e) => onChange(e.target.value)} />
     </div>
   );
 }
@@ -109,31 +103,36 @@ export default function VehicleInfoInput({ onChange }) {
 
       {mode === 'manual' ? (
         <div className="grid gap-4 sm:grid-cols-3">
-          <Select
+          <TextField
             id="make"
             label="Make"
-            placeholder="Select make"
+            placeholder="e.g. Freightliner"
             value={manual.make}
-            options={Object.keys(VEHICLE_CATALOG)}
-            onChange={(make) => setManual((m) => ({ ...m, make, model: '' }))}
+            onChange={(make) => setManual((m) => ({ ...m, make }))}
           />
-          <Select
+          <TextField
             id="model"
             label="Model"
-            placeholder={manual.make ? 'Select model' : 'Select make first'}
+            placeholder="e.g. Cascadia"
             value={manual.model}
-            options={VEHICLE_CATALOG[manual.make] ?? []}
-            disabled={!manual.make}
             onChange={(model) => setManual((m) => ({ ...m, model }))}
           />
-          <Select
-            id="year"
-            label="Year"
-            placeholder="Select year"
-            value={manual.year}
-            options={VEHICLE_YEARS}
-            onChange={(year) => setManual((m) => ({ ...m, year }))}
-          />
+          <div>
+            <label htmlFor="year" className="field-label">
+              Year
+            </label>
+            <input
+              id="year"
+              type="number"
+              inputMode="numeric"
+              className="input font-mono"
+              placeholder={String(CURRENT_YEAR)}
+              min="1980"
+              max={CURRENT_YEAR + 1}
+              value={manual.year}
+              onChange={(e) => setManual((m) => ({ ...m, year: e.target.value }))}
+            />
+          </div>
         </div>
       ) : (
         <div>

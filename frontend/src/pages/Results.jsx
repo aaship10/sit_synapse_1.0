@@ -5,6 +5,7 @@ import PageHeader from '../components/layout/PageHeader.jsx';
 import SeverityBanner from '../components/SeverityBanner.jsx';
 import RagCauseCard from '../components/RagCauseCard.jsx';
 import CodeLookupPanel from '../components/CodeLookupPanel.jsx';
+import GuidedDiagnosis from '../components/GuidedDiagnosis.jsx';
 import FeedbackPanel from '../components/FeedbackPanel.jsx';
 import FaultCodeTag from '../components/FaultCodeTag.jsx';
 import { getDiagnosis, submitFeedback } from '../data/api.js';
@@ -226,6 +227,7 @@ export default function Results() {
           </div>
 
           <DataNotes warnings={d.warnings} />
+          <GuidedDiagnosis key={d.id} causes={d.causes} />
         </section>
 
         <aside className="space-y-6">

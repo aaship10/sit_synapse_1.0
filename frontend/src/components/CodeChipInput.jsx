@@ -1,16 +1,13 @@
 import { useEffect, useState } from 'react';
 import { Loader2, X, Plus } from 'lucide-react';
-import { normalizeFaultCode, EXAMPLE_FAULT_CODES } from '../data/mockData.js';
+import { normalizeFaultCode, EXAMPLE_FAULT_CODES } from '../utils/faultCodes.js';
 import { decodeFaultCode } from '../data/api.js';
 
 /**
  * Type-and-enter chip input for fault codes.
  * value: string[] of normalized codes; onChange(nextCodes)
- * Each chip is decoded asynchronously and the plain-English meaning is shown under it.
  */
 export default function CodeChipInput({ id = 'fault-codes', value, onChange, draft: draftProp, onDraftChange, externalError = '' }) {
-  // The typed-but-not-yet-added text can be owned by the parent (so a form submit can pick it
-  // up instead of silently dropping it); falls back to local state when uncontrolled.
   const [localDraft, setLocalDraft] = useState('');
   const draft = draftProp ?? localDraft;
   const setDraft = onDraftChange ?? setLocalDraft;
@@ -18,7 +15,6 @@ export default function CodeChipInput({ id = 'fault-codes', value, onChange, dra
   const shownError = error || externalError;
   const [decoded, setDecoded] = useState({}); // code -> { status: 'loading' | 'found' | 'unknown', data }
 
-  // Decode any codes we haven't looked up yet.
   useEffect(() => {
     value.forEach((code) => {
       if (decoded[code]) return;

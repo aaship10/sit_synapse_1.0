@@ -7,7 +7,7 @@ import CodeChipInput from '../components/CodeChipInput.jsx';
 import SymptomInput from '../components/SymptomInput.jsx';
 import MultiStepLoader, { DIAGNOSIS_STEPS } from '../components/MultiStepLoader.jsx';
 import { runDiagnosis } from '../data/api.js';
-import { normalizeFaultCode } from '../data/mockData.js';
+import { normalizeFaultCode } from '../utils/faultCodes.js';
 
 const STEP_MS = 625; // 4 steps ≈ 2.5s total
 

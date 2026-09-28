@@ -3,7 +3,6 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Plus, ArrowRight } from 'lucide-react';
 import PageHeader from '../components/layout/PageHeader.jsx';
 import HistoryTable from '../components/HistoryTable.jsx';
-import { getDiagnosisHistory } from '../data/mockData.js';
 import { getRagDiagnosisHistory } from '../data/api.js';
 
 function StatTile({ label, value, hint }) {
@@ -21,9 +20,7 @@ export default function Dashboard() {
   const [rows, setRows] = useState(null);
 
   useEffect(() => {
-    Promise.all([getDiagnosisHistory(), getRagDiagnosisHistory()]).then(([mock, real]) => {
-      setRows([...real, ...mock].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)));
-    });
+    getRagDiagnosisHistory().then(setRows);
   }, []);
 
   const recent = rows?.slice(0, 5) ?? [];
@@ -48,7 +45,7 @@ export default function Dashboard() {
       />
 
       <div className="mb-8 grid gap-4 sm:grid-cols-3">
-        <StatTile label="Total diagnoses" value={rows?.length ?? '—'} hint="Last 30 days" />
+        <StatTile label="Total diagnoses" value={rows?.length ?? '—'} hint="All time, this browser" />
         <StatTile label="Awaiting feedback" value={awaitingFeedback} hint="Rate results to improve accuracy" />
         <StatTile label="Rated helpful" value={helpfulRate} hint={`${critical} critical-severity cases`} />
       </div>

@@ -18,6 +18,7 @@ import sys
 from pathlib import Path
 from typing import List, Optional
 
+import httpx
 import uvicorn
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
@@ -26,6 +27,7 @@ from langchain_chroma import Chroma
 from pydantic import BaseModel, Field
 
 from build_store import COLLECTION_NAME, DEFAULT_DATASET_PATH, DEFAULT_PERSIST_DIR, build_vector_store
+from diagnosis_history import find_cached_diagnosis, store_diagnosis
 from embed_store import get_embedder
 from rag_answer import generate_diagnostic_answer
 
@@ -91,12 +93,24 @@ class QueryResponse(BaseModel):
     query: str
     matches: List[RetrievedChunk]
     answer: Optional[str] = None
+    from_cache: bool = False
 
 
 @app.post("/query", response_model=QueryResponse)
 def query(req: QueryRequest) -> QueryResponse:
     if _vectordb is None:
         raise HTTPException(status_code=503, detail="Vector store not initialized yet")
+
+    # Scan diagnosis history first -- a semantically close past symptom skips
+    # both the fault-DB search and the Groq call entirely.
+    cached = find_cached_diagnosis(PERSIST_DIR, req.query)
+    if cached is not None:
+        return QueryResponse(
+            query=req.query,
+            matches=[RetrievedChunk(**m) for m in cached["matches"]],
+            answer=cached["answer"] or None,
+            from_cache=True,
+        )
 
     results = _vectordb.similarity_search(req.query, k=TOP_K)
 
@@ -126,7 +140,10 @@ def query(req: QueryRequest) -> QueryResponse:
             raise HTTPException(status_code=400, detail="GROQ_API_KEY not set; cannot generate answer")
         answer = generate_diagnostic_answer(req.query, results)
 
-    return QueryResponse(query=req.query, matches=matches, answer=answer)
+    if matches:
+        store_diagnosis(PERSIST_DIR, req.query, [m.model_dump() for m in matches], answer)
+
+    return QueryResponse(query=req.query, matches=matches, answer=answer, from_cache=False)
 
 
 @app.post("/rebuild", status_code=202)
@@ -135,6 +152,35 @@ def rebuild() -> dict:
     global _vectordb
     _vectordb = build_vector_store(json_path=DEFAULT_DATASET_PATH, persist_directory=PERSIST_DIR)
     return {"status": "rebuilt", "persist_dir": PERSIST_DIR}
+
+
+class SpeechTokenResponse(BaseModel):
+    token: str
+    expires_in_seconds: int
+
+
+@app.get("/speech/token", response_model=SpeechTokenResponse)
+def speech_token(expires_in_seconds: int = 60) -> SpeechTokenResponse:
+    """Mints a short-lived AssemblyAI streaming token for the browser mic.
+
+    The real ASSEMBLYAI_API_KEY never leaves this server -- the frontend
+    only ever sees this one-time, time-limited token, which is the auth
+    pattern AssemblyAI's docs recommend for browser-based clients.
+    """
+    api_key = os.environ.get("ASSEMBLYAI_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=400, detail="ASSEMBLYAI_API_KEY not set on the server")
+
+    resp = httpx.get(
+        "https://streaming.assemblyai.com/v3/token",
+        params={"expires_in_seconds": expires_in_seconds},
+        headers={"Authorization": api_key},
+        timeout=10,
+    )
+    if resp.status_code != 200:
+        raise HTTPException(status_code=502, detail=f"AssemblyAI token request failed: {resp.text}")
+
+    return SpeechTokenResponse(token=resp.json()["token"], expires_in_seconds=expires_in_seconds)
 
 
 if __name__ == "__main__":

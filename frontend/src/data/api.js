@@ -5,13 +5,17 @@
  * mockData.js. Symptoms, fault codes and the vehicle are all sent to
  * POST /diagnose, which runs the J1939 SQL lookup + vector-DB search + Groq
  * synthesis; mileage rides along locally for display only.
+ * Backend integration for the RAG diagnostic copilot (rag_pipeline/api.py).
+ * This is the only source of diagnosis data in the app -- no mock/demo data.
+ *
+ * Only the `symptoms` text is actually sent to the backend (it's the only
+ * input the RAG pipeline takes); vehicle/faultCodes/mileage ride along
+ * locally purely for display.
  *
  * Diagnoses are persisted to localStorage (both the full record and a
  * lightweight history-index entry) so Dashboard/History can list them and
  * Results can reopen them later, including after the browser is closed.
  */
-import { decodeFaultCode as decodeFaultCodeLocally } from './mockData.js';
-
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8008';
 const OBD_CODE = /^[PBCU][0-3][0-9A-F]{3}$/;
 
@@ -237,15 +241,14 @@ export async function runDiagnosis(payload) {
  * local lookup table. Resolves to { code, component, description, ... } or null.
  */
 export async function decodeFaultCode(code) {
-  if (OBD_CODE.test(code)) return decodeFaultCodeLocally(code);
   try {
     const res = await fetch(`${API_BASE}/decode?code=${encodeURIComponent(code)}`);
     if (res.ok) return await res.json();
     if (res.status === 404 || res.status === 422) return null;
   } catch {
-    /* backend down -- fall through to the local table */
+    /* backend down */
   }
-  return decodeFaultCodeLocally(code);
+  return null;
 }
 
 /** Full diagnosis result by id, or null if not found. */
