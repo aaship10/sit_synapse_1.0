@@ -20,6 +20,9 @@ AUTH_PORT = int(os.environ.get("AUTH_PORT", "8010"))
 # Comma-separated list of allowed origins for the frontend dev server(s).
 FRONTEND_ORIGINS = [
     origin.strip()
-    for origin in os.environ.get("FRONTEND_ORIGIN", "http://localhost:5173").split(",")
+    for origin in os.environ.get(
+        "FRONTEND_ORIGIN",
+        "http://localhost:5173,http://localhost:5174,http://127.0.0.1:5173,http://127.0.0.1:5174",
+    ).split(",")
     if origin.strip()
 ]

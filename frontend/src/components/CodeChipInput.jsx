@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { Mic, X, Plus } from 'lucide-react';
+import { Loader2, Mic, X, Plus } from 'lucide-react';
 import { normalizeFaultCode, EXAMPLE_FAULT_CODES } from '../utils/faultCodes.js';
+import { decodeFaultCode } from '../data/api.js';
 import { startDictation } from '../data/speech.js';
 
 function friendlyMicError(err) {
@@ -32,9 +33,13 @@ function extractEnterCommand(text) {
  * Also supports voice entry: say the code, then say "enter" to add it --
  * the same commit action as pressing the Enter key, just spoken instead.
  */
-export default function CodeChipInput({ id = 'fault-codes', value, onChange }) {
-  const [draft, setDraft] = useState('');
+export default function CodeChipInput({ id = 'fault-codes', value, onChange, draft: draftProp, onDraftChange, externalError = '' }) {
+  const [localDraft, setLocalDraft] = useState('');
+  const draft = draftProp ?? localDraft;
+  const setDraft = onDraftChange ?? setLocalDraft;
   const [error, setError] = useState('');
+  const shownError = error || externalError;
+  const [decoded, setDecoded] = useState({}); // code -> { status: 'loading' | 'found' | 'unknown', data }
   const [listening, setListening] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [notice, setNotice] = useState('');
@@ -44,6 +49,16 @@ export default function CodeChipInput({ id = 'fault-codes', value, onChange }) {
   draftRef.current = draft;
 
   useEffect(() => () => dictationRef.current?.stop(), []);
+
+  useEffect(() => {
+    value.forEach((code) => {
+      if (decoded[code]) return;
+      setDecoded((d) => ({ ...d, [code]: { status: 'loading' } }));
+      decodeFaultCode(code).then((data) =>
+        setDecoded((d) => ({ ...d, [code]: { status: data ? 'found' : 'unknown', data } }))
+      );
+    });
+  }, [value, decoded]);
 
   const addCode = (raw) => {
     const input = raw.trim();
@@ -126,7 +141,7 @@ export default function CodeChipInput({ id = 'fault-codes', value, onChange }) {
       <div className="flex gap-2">
         <input
           id={id}
-          className={`input font-mono ${error ? 'border-severity-critical' : ''}`}
+          className={`input font-mono ${shownError ? 'border-severity-critical' : ''}`}
           placeholder="SPN 102 FMI 3, P0299 …"
           value={draft}
           onChange={(e) => {
@@ -134,7 +149,7 @@ export default function CodeChipInput({ id = 'fault-codes', value, onChange }) {
             if (error) setError('');
           }}
           onKeyDown={handleKeyDown}
-          aria-invalid={!!error}
+          aria-invalid={!!shownError}
           aria-describedby={`${id}-hint`}
           autoComplete="off"
         />
@@ -159,8 +174,8 @@ export default function CodeChipInput({ id = 'fault-codes', value, onChange }) {
         </button>
       </div>
 
-      <p id={`${id}-hint`} className={`mt-2 text-[13px] ${error ? 'text-severity-critical' : 'text-text-secondary'}`}>
-        {error || (
+      <p id={`${id}-hint`} className={`mt-2 text-[13px] ${shownError ? 'text-severity-critical' : 'text-text-secondary'}`}>
+        {shownError || (
           <>
             Press Enter to add, or use the mic and say <span className="font-medium text-text-primary">“enter.”</span>{' '}
             {value.length === 0 && (
@@ -189,23 +204,43 @@ export default function CodeChipInput({ id = 'fault-codes', value, onChange }) {
       )}
 
       {value.length > 0 && (
-        <ul className="mt-4 flex flex-wrap gap-2">
-          {value.map((code) => (
-            <li
-              key={code}
-              className="inline-flex items-center gap-2 rounded-btn bg-primary-light px-2.5 py-1.5 font-mono text-[14px] font-medium text-primary"
-            >
-              {code}
-              <button
-                type="button"
-                onClick={() => removeCode(code)}
-                className="rounded-btn text-primary/70 hover:text-primary"
-                aria-label={`Remove ${code}`}
-              >
-                <X size={14} />
-              </button>
-            </li>
-          ))}
+        <ul className="mt-4 grid gap-3 sm:grid-cols-2">
+          {value.map((code) => {
+            const d = decoded[code];
+            return (
+              <li key={code} className="rounded-card border border-border px-4 py-3">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="inline-flex items-center gap-2 rounded-btn bg-primary-light px-2 py-1 font-mono text-[14px] font-medium text-primary">
+                    {code}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => removeCode(code)}
+                    className="rounded-btn p-1 text-text-secondary hover:bg-surface-muted hover:text-text-primary"
+                    aria-label={`Remove ${code}`}
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+                <div className="mt-2 text-[14px] leading-5">
+                  {(!d || d.status === 'loading') && (
+                    <span className="inline-flex items-center gap-2 text-text-secondary">
+                      <Loader2 size={14} className="animate-spin" /> Decoding…
+                    </span>
+                  )}
+                  {d?.status === 'found' && (
+                    <>
+                      <div className="font-medium text-text-primary">{d.data.component}</div>
+                      <div className="mt-0.5 text-text-secondary">{d.data.description}</div>
+                    </>
+                  )}
+                  {d?.status === 'unknown' && (
+                    <span className="text-text-secondary">Not found in the J1939 database — will be sent as entered.</span>
+                  )}
+                </div>
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>

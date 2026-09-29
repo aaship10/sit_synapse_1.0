@@ -7,6 +7,7 @@ import CodeChipInput from '../components/CodeChipInput.jsx';
 import SymptomInput from '../components/SymptomInput.jsx';
 import MultiStepLoader, { DIAGNOSIS_STEPS } from '../components/MultiStepLoader.jsx';
 import { runDiagnosis } from '../data/api.js';
+import { normalizeFaultCode } from '../utils/faultCodes.js';
 
 const STEP_MS = 625; // 4 steps ≈ 2.5s total
 
@@ -46,6 +47,8 @@ export default function NewDiagnosis() {
   const navigate = useNavigate();
   const [vehicle, setVehicle] = useState(null);
   const [faultCodes, setFaultCodes] = useState([]);
+  const [codeDraft, setCodeDraft] = useState(''); // typed in the code box but not yet added as a chip
+  const [codeDraftError, setCodeDraftError] = useState('');
   const [symptoms, setSymptoms] = useState('');
   const [mileage, setMileage] = useState('');
   const [loaderStep, setLoaderStep] = useState(null); // null = hidden
@@ -54,17 +57,32 @@ export default function NewDiagnosis() {
 
   useEffect(() => () => timers.current.forEach(clearTimeout), []);
 
-  const canSubmit = faultCodes.length > 0 && !!symptoms.trim() && loaderStep === null;
+  // Codes, symptoms, or both: a symptom-only (or code-only) query is valid.
+  const canSubmit = (faultCodes.length > 0 || !!codeDraft.trim() || !!symptoms.trim()) && loaderStep === null;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!canSubmit) return;
 
+    // A code typed but never added (no Enter / Add) must not be silently dropped.
+    let codes = faultCodes;
+    if (codeDraft.trim()) {
+      const code = normalizeFaultCode(codeDraft);
+      if (!code) {
+        setCodeDraftError(`"${codeDraft.trim()}" is not a valid fault code — fix or clear it, then run again.`);
+        return;
+      }
+      codes = faultCodes.includes(code) ? faultCodes : [...faultCodes, code];
+      setFaultCodes(codes);
+      setCodeDraft('');
+    }
+    setCodeDraftError('');
+
     setError('');
     setLoaderStep(0);
     const request = runDiagnosis({
       vehicle,
-      faultCodes,
+      faultCodes: codes,
       symptoms: symptoms.trim(),
       mileage: mileage ? Number(mileage) : null,
     });
@@ -82,7 +100,7 @@ export default function NewDiagnosis() {
     } catch (err) {
       timers.current.forEach(clearTimeout);
       setLoaderStep(null);
-      setError(err.message || 'Could not reach the diagnosis backend. Is api.py running on port 8008?');
+      setError(err.message || 'Could not reach the diagnosis backend. Is backend/app.py running on port 8008?');
     }
   };
 
@@ -90,7 +108,7 @@ export default function NewDiagnosis() {
 
   return (
     <form onSubmit={handleSubmit}>
-      <PageHeader title="New diagnosis" description="Enter the active fault codes and observed symptoms. Vehicle details are optional." />
+      <PageHeader title="New diagnosis" description="Enter the active fault codes and/or observed symptoms. Vehicle details are optional." />
 
       <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
         <div className="space-y-6">
@@ -100,14 +118,23 @@ export default function NewDiagnosis() {
 
           <FormSection number="2" title="Fault codes" description="J1939 SPN/FMI or OBD-II codes currently active or recently stored.">
             <label htmlFor="fault-codes" className="field-label">
-              Fault codes <span className="text-severity-critical">*</span>
+              Fault codes
             </label>
-            <CodeChipInput value={faultCodes} onChange={setFaultCodes} />
+            <CodeChipInput
+              value={faultCodes}
+              onChange={setFaultCodes}
+              draft={codeDraft}
+              onDraftChange={(d) => {
+                setCodeDraft(d);
+                setCodeDraftError('');
+              }}
+              externalError={codeDraftError}
+            />
           </FormSection>
 
           <FormSection number="3" title="Symptoms" description="What the driver reported or what you observed.">
             <label htmlFor="symptoms" className="field-label">
-              Symptoms <span className="text-severity-critical">*</span>
+              Symptoms
             </label>
             <SymptomInput value={symptoms} onChange={setSymptoms} />
           </FormSection>
@@ -143,8 +170,9 @@ export default function NewDiagnosis() {
                 done={faultCodes.length > 0}
                 label="Fault codes"
                 detail={faultCodes.length ? `${faultCodes.length} code${faultCodes.length > 1 ? 's' : ''} added` : ''}
+                optional
               />
-              <ChecklistItem done={!!symptoms.trim()} label="Symptoms" detail={symptoms.trim() && 'Described'} />
+              <ChecklistItem done={!!symptoms.trim()} label="Symptoms" detail={symptoms.trim() && 'Described'} optional />
               <ChecklistItem done={!!mileage} label="Odometer" detail={mileage && `${Number(mileage).toLocaleString()} mi`} optional />
             </ul>
 
@@ -153,7 +181,7 @@ export default function NewDiagnosis() {
               Run Diagnosis
             </button>
             {!canSubmit && loaderStep === null && !error && (
-              <p className="mt-3 text-center text-[13px] text-text-secondary">Add at least one fault code and a symptom description to continue.</p>
+              <p className="mt-3 text-center text-[13px] text-text-secondary">Add a fault code or a symptom description to continue.</p>
             )}
             {error && <p className="mt-3 text-center text-[13px] text-severity-critical">{error}</p>}
           </div>

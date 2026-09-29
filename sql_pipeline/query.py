@@ -29,6 +29,7 @@ import re
 from typing import Any
 
 from sqlalchemy import text
+from sqlalchemy.exc import OperationalError
 
 from db import get_engine
 
@@ -138,6 +139,22 @@ def _manufacturer_record(row: dict) -> dict:
     }
 
 
+def _lookup_rows(spn: int, fmi: int, attempts: int = 2) -> list[dict]:
+    # Neon suspends idle compute; the first connection while it wakes up can fail
+    # with OperationalError even with pool_pre_ping. One retry covers that.
+    for attempt in range(1, attempts + 1):
+        try:
+            with get_engine().connect() as conn:
+                rows = [dict(r) for r in conn.execute(_LOOKUP_SQL, {"spn": spn, "fmi": fmi}).mappings()]
+                if not rows:
+                    _raise_not_found(conn, spn, fmi)
+                return rows
+        except OperationalError:
+            if attempt == attempts:
+                raise
+    return []
+
+
 def fetch_fault_code(spn: int, fmi: int, manufacturer: str | None = None) -> dict:
     """Look up one J1939 fault code. See module docstring for the result contract.
 
@@ -148,10 +165,7 @@ def fetch_fault_code(spn: int, fmi: int, manufacturer: str | None = None) -> dic
     spn, fmi = _validate(spn, fmi)
     requested = normalize_manufacturer(manufacturer)
 
-    with get_engine().connect() as conn:
-        rows = [dict(r) for r in conn.execute(_LOOKUP_SQL, {"spn": spn, "fmi": fmi}).mappings()]
-        if not rows:
-            _raise_not_found(conn, spn, fmi)
+    rows = _lookup_rows(spn, fmi)
 
     base = rows[0]
     in_spn_catalog = base["catalog_spn"] is not None

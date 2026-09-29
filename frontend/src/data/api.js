@@ -1,16 +1,17 @@
 /**
- * Backend integration for the RAG diagnostic copilot (rag_pipeline/api.py).
+ * Backend integration for the hybrid diagnostic copilot (backend/app.py).
  * This is the only source of diagnosis data in the app -- no mock/demo data.
  *
- * Only the `symptoms` text is actually sent to the backend (it's the only
- * input the RAG pipeline takes); vehicle/faultCodes/mileage ride along
- * locally purely for display.
+ * Symptoms, fault codes and the vehicle are all sent to POST /diagnose, which
+ * runs the J1939 SQL lookup + vector-DB search + Groq synthesis; mileage
+ * rides along locally for display only.
  *
  * Diagnoses are persisted to localStorage (both the full record and a
  * lightweight history-index entry) so Dashboard/History can list them and
  * Results can reopen them later, including after the browser is closed.
  */
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8008';
+const OBD_CODE = /^[PBCU][0-3][0-9A-F]{3}$/;
 
 const DIAGNOSIS_KEY_PREFIX = 'ragDiagnosis:';
 const HISTORY_INDEX_KEY = 'ragDiagnosisHistory';
@@ -71,7 +72,8 @@ function toSummaryRow(diagnosis) {
     createdAt: diagnosis.createdAt,
     vehicle: diagnosis.vehicle,
     faultCodes: diagnosis.faultCodes,
-    topCause: diagnosis.causes[0]?.faultName ?? 'No match found',
+    // The decoded code is a fact; a service-doc match is only symptom similarity, so it comes second.
+    topCause: diagnosis.codeResults?.[0]?.summary ?? diagnosis.causes[0]?.faultName ?? 'No match found',
     severity: diagnosis.severity,
     feedback: diagnosis.feedback,
   };
@@ -94,8 +96,43 @@ function toSeverityLevel(severity) {
 
 const SEVERITY_RANK = { safe: 1, warning: 2, critical: 3 };
 
-function worstSeverityLevel(causes) {
-  return causes.reduce((worst, c) => (SEVERITY_RANK[c.severityLevel] > SEVERITY_RANK[worst] ? c.severityLevel : worst), 'safe');
+/** SAE FMI severity ("Most Severe Level" etc.) -> UI level, or null when SAE assigns none. */
+function fmiSeverityLevel(saeSeverity) {
+  const s = (saeSeverity || '').toLowerCase();
+  if (s.startsWith('most severe')) return 'critical';
+  if (s.startsWith('moderately severe')) return 'warning';
+  if (s.startsWith('least severe')) return 'safe';
+  return null;
+}
+
+function worstSeverityLevel(causes, codeResults = []) {
+  const levels = [...causes.map((c) => c.severityLevel), ...codeResults.map((c) => c.severityLevel).filter(Boolean)];
+  // Nothing rated at all is not evidence of "safe".
+  if (!levels.length) return 'warning';
+  return levels.reduce((worst, l) => (SEVERITY_RANK[l] > SEVERITY_RANK[worst] ? l : worst), 'safe');
+}
+
+/** Flattens the SQL branch's per-code results into what the results page renders. */
+function toCodeResults(sql) {
+  return (sql?.codes ?? []).map((c) => {
+    if (!c.found) {
+      return { code: `SPN ${c.spn} FMI ${c.fmi}`, found: false, error: c.error?.message ?? 'Not found' };
+    }
+    const r = c.sql_result;
+    return {
+      code: r.fault_code,
+      found: true,
+      component: r.sae_standard.spn_name,
+      meaning: r.sae_standard.fmi_meaning,
+      summary: r.sae_standard.summary,
+      saeSeverity: r.sae_standard.severity,
+      severityLevel: fmiSeverityLevel(r.sae_standard.severity),
+      manufacturerSpecific: r.manufacturer_specific_data,
+      manufacturerRecord: r.manufacturer_record,
+      otherManufacturerRecords: r.other_manufacturer_records,
+      notes: r.notes,
+    };
+  });
 }
 
 /** Groups the flat match list (one row per Symptoms/Diagnostic_Procedures section) back into one card per fault. */
@@ -113,7 +150,8 @@ function groupMatchesIntoCauses(matches) {
   return order.map((faultName, i) => {
     const group = byFault.get(faultName);
     const symptomsMatch = group.find((m) => m.section === 'Symptoms');
-    const proceduresMatch = group.find((m) => m.section === 'Diagnostic_Procedures');
+    // The backend attaches the fault's procedure steps even when only its Symptoms chunk matched.
+    const stepsMatch = group.find((m) => m.steps?.length);
     const severity = group[0].severity;
 
     return {
@@ -128,21 +166,25 @@ function groupMatchesIntoCauses(matches) {
             .map((line) => line.replace(/^- /, '').trim())
             .filter(Boolean)
         : [],
-      steps: proceduresMatch?.steps ?? [],
+      steps: stepsMatch?.steps ?? [],
     };
   });
 }
 
 /**
- * Submit a new diagnosis request. Only payload.symptoms is sent to the RAG
- * backend; vehicle/faultCodes/mileage ride along in the stored record so the
- * results page can still show them, unchanged from the mock version's contract.
+ * Submit a new diagnosis request: symptoms + fault codes + vehicle go to the
+ * hybrid backend; mileage rides along in the stored record for display.
  */
 export async function runDiagnosis(payload) {
-  const res = await fetch(`${API_BASE}/query`, {
+  const v = payload.vehicle;
+  const res = await fetch(`${API_BASE}/diagnose`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query: payload.symptoms }),
+    body: JSON.stringify({
+      symptoms: payload.symptoms,
+      fault_codes: payload.faultCodes,
+      vehicle: v ? { make: v.make, model: v.model, year: v.year, engine: v.engine, vin: v.vin } : null,
+    }),
   });
 
   if (!res.ok) {
@@ -151,25 +193,57 @@ export async function runDiagnosis(payload) {
   }
 
   const data = await res.json();
-  const causes = groupMatchesIntoCauses(data.matches);
+  // Show only the service-doc entries the answer actually used; the rest were judged unrelated.
+  const cited = new Set(data.cited_service_docs ?? []);
+  const usedMatches = data.answer && cited.size ? data.matches.filter((m) => cited.has(m.fault_name)) : data.matches;
+  const causes = groupMatchesIntoCauses(usedMatches);
+  const codeResults = toCodeResults(data.sql);
   const id = `rag-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+  // No vehicle picked in the form? Use the one the backend found in the text (if any).
+  const found = data.sql?.vehicle;
+  const vehicle =
+    payload.vehicle ??
+    (found?.manufacturer
+      ? { source: 'text', make: found.manufacturer, model: found.model ?? '', year: found.year ?? '', engine: found.engine ?? '' }
+      : null);
 
   const diagnosis = {
     id,
     createdAt: new Date().toISOString(),
-    vehicle: payload.vehicle,
+    vehicle,
     faultCodes: payload.faultCodes,
     mileage: payload.mileage,
     symptoms: data.query,
     answer: data.answer,
-    severity: worstSeverityLevel(causes),
+    relationship: data.relationship ?? null,
+    severity: worstSeverityLevel(causes, codeResults),
     causes,
+    codeResults,
+    obdCodes: data.obd_codes ?? [],
+    warnings: data.warnings ?? [],
     feedback: null,
   };
 
   saveDiagnosis(id, diagnosis);
   saveHistoryIndex([toSummaryRow(diagnosis), ...loadHistoryIndex()]);
   return { id };
+}
+
+/**
+ * Decode one fault code for the code-chip preview: J1939 via the backend's
+ * SQL database, OBD-II (and J1939 when the backend is unreachable) via the
+ * local lookup table. Resolves to { code, component, description, ... } or null.
+ */
+export async function decodeFaultCode(code) {
+  try {
+    const res = await fetch(`${API_BASE}/decode?code=${encodeURIComponent(code)}`);
+    if (res.ok) return await res.json();
+    if (res.status === 404 || res.status === 422) return null;
+  } catch {
+    /* backend down */
+  }
+  return null;
 }
 
 /** Full diagnosis result by id, or null if not found. */

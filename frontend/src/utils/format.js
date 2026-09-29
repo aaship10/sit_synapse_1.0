@@ -10,7 +10,7 @@ export function formatTime(iso) {
 }
 
 export function formatVehicle(v) {
-  return `${v.year} ${v.make} ${v.model}`;
+  return [v.year, v.make, v.model].filter(Boolean).join(' ');
 }
 
 export function formatMiles(n) {
